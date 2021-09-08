@@ -52,6 +52,7 @@ void HelloTriangleApplication::init_vulkan()
     create_logical_device();
     create_swap_chain();
     create_image_views();
+    create_graphics_pipeline();
 }
 
 void HelloTriangleApplication::main_loop()
@@ -328,6 +329,10 @@ void HelloTriangleApplication::create_image_views()
         if (vkCreateImageView(device, &create_info, nullptr, &swap_chain_image_views[i]) != VK_SUCCESS)
             throw std::runtime_error("failed to create image views!");
     }
+}
+
+void HelloTriangleApplication::create_graphics_pipeline()
+{
 }
 
 VkSurfaceFormatKHR HelloTriangleApplication::choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &available_formats)
