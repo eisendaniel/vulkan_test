@@ -5,7 +5,7 @@ SRC_DIR := src
 BIN_DIR := bin
 IDIR := include
 
-CXXFLAGS = -std=c++17 -Wall -Wextra -I$(IDIR)
+CXXFLAGS = -std=c++17 -Wall -I$(IDIR)
 LDFLAGS = -lglfw -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl
 
 EXE := $(BIN_DIR)/vulkan_test
