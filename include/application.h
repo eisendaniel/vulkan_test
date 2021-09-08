@@ -4,6 +4,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <set>
 #include <vector>
 #include <optional>
@@ -50,6 +51,13 @@ struct QueueFamilyIndices
     }
 };
 
+struct SwapChainSupportDetails
+{
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> present_modes;
+};
+
 class HelloTriangleApplication
 {
 public:
@@ -68,6 +76,11 @@ private:
     VkQueue graphics_queue;
     VkQueue present_queue;
 
+    VkSwapchainKHR swap_chain;
+    std::vector<VkImage> swap_chain_images;
+    VkFormat swap_chain_image_format;
+    VkExtent2D swap_chain_extent;
+
     void init_window();
     void init_vulkan();
     void main_loop();
@@ -78,8 +91,15 @@ private:
 
     void pick_physical_device();
     bool is_device_suitable(VkPhysicalDevice device);
+
     void create_logical_device();
     QueueFamilyIndices find_queue_families(VkPhysicalDevice device);
+
+    void create_swap_chain();
+    VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &available_formats);
+    VkPresentModeKHR choose_swap_present_mode(const std::vector<VkPresentModeKHR> &available_present_modes);
+    VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities);
+    SwapChainSupportDetails query_swap_chain_support(VkPhysicalDevice device);
 
     void populate_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT &create_info);
     void setup_debug_messenger();
