@@ -54,16 +54,25 @@ void HelloTriangleApplication::init_vulkan()
     create_image_views();
     create_render_pass();
     create_graphics_pipeline();
+    create_framebuffers();
+    create_command_pool();
+    create_command_buffers();
 }
 
 void HelloTriangleApplication::main_loop()
 {
     while (!glfwWindowShouldClose(window))
         glfwPollEvents();
+    draw_frame();
 }
 
 void HelloTriangleApplication::cleanup()
 {
+    vkDestroyCommandPool(device, command_pool, nullptr);
+
+    for (auto framebuffer : swap_chain_framebuffers)
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+
     vkDestroyPipeline(device, graphics_pipeline, nullptr);
     vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
     vkDestroyRenderPass(device, render_pass, nullptr);
@@ -487,6 +496,88 @@ void HelloTriangleApplication::create_graphics_pipeline()
 
     vkDestroyShaderModule(device, frag_shader_module, nullptr);
     vkDestroyShaderModule(device, vert_shader_module, nullptr);
+}
+
+void HelloTriangleApplication::create_framebuffers()
+{
+    swap_chain_framebuffers.resize(swap_chain_image_views.size());
+
+    for (size_t i = 0; i < swap_chain_image_views.size(); i++)
+    {
+        VkImageView attachments[] = {swap_chain_image_views[i]};
+
+        VkFramebufferCreateInfo framebuffer_info{};
+        framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebuffer_info.renderPass = render_pass;
+        framebuffer_info.attachmentCount = 1;
+        framebuffer_info.pAttachments = attachments;
+        framebuffer_info.width = swap_chain_extent.width;
+        framebuffer_info.height = swap_chain_extent.height;
+        framebuffer_info.layers = 1;
+
+        if (vkCreateFramebuffer(device, &framebuffer_info, nullptr, &swap_chain_framebuffers[i]) != VK_SUCCESS)
+            throw std::runtime_error("failed to create framebuffer!");
+    }
+}
+
+void HelloTriangleApplication::create_command_pool()
+{
+    QueueFamilyIndices queue_family_indices = find_queue_families(physical_device);
+
+    VkCommandPoolCreateInfo pool_info{};
+    pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
+    pool_info.flags = 0;
+
+    if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) != VK_SUCCESS)
+        throw std::runtime_error("failed to create command pool!");
+}
+
+void HelloTriangleApplication::create_command_buffers()
+{
+    command_buffers.resize(swap_chain_framebuffers.size());
+
+    VkCommandBufferAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    alloc_info.commandPool = command_pool;
+    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    alloc_info.commandBufferCount = (uint32_t)command_buffers.size();
+
+    if (vkAllocateCommandBuffers(device, &alloc_info, command_buffers.data()) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate command buffers!");
+
+    for (size_t i = 0; i < command_buffers.size(); i++)
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        if (vkBeginCommandBuffer(command_buffers[i], &begin_info) != VK_SUCCESS)
+            throw std::runtime_error("falied to begin recording command buffer!");
+
+        VkRenderPassBeginInfo render_pass_info{};
+        render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        render_pass_info.renderPass = render_pass;
+        render_pass_info.framebuffer = swap_chain_framebuffers[i];
+        render_pass_info.renderArea.offset = {0, 0};
+        render_pass_info.renderArea.extent = swap_chain_extent;
+
+        VkClearValue clear_color = {{1.0f, 0.0f, 0.5f, 1.0f}};
+        render_pass_info.clearValueCount = 1;
+        render_pass_info.pClearValues = &clear_color;
+
+        vkCmdBeginRenderPass(command_buffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+        vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
+        vkCmdEndRenderPass(command_buffers[i]);
+
+        if (vkEndCommandBuffer(command_buffers[i]) != VK_SUCCESS)
+            throw std::runtime_error("falied torecord command buffer!");
+    }
+}
+
+void HelloTriangleApplication::draw_frame()
+{
+    
 }
 
 VkShaderModule HelloTriangleApplication::create_shader_module(const std::vector<char> &code)

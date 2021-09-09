@@ -82,10 +82,14 @@ private:
     VkFormat swap_chain_image_format;
     VkExtent2D swap_chain_extent;
     std::vector<VkImageView> swap_chain_image_views;
+    std::vector<VkFramebuffer> swap_chain_framebuffers;
 
     VkRenderPass render_pass;
     VkPipelineLayout pipeline_layout;
     VkPipeline graphics_pipeline;
+
+    VkCommandPool command_pool;
+    std::vector<VkCommandBuffer> command_buffers;
 
     void init_window();
     void init_vulkan();
@@ -105,6 +109,11 @@ private:
     void create_image_views();
     void create_render_pass();
     void create_graphics_pipeline();
+    void create_framebuffers();
+    void create_command_pool();
+    void create_command_buffers();
+
+    void draw_frame();
 
     VkShaderModule create_shader_module(const std::vector<char> &code);
     VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &available_formats);
