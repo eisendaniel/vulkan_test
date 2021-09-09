@@ -15,9 +15,9 @@ EXE := $(BIN_DIR)/vulkan_test
 SRC := $(wildcard $(SRC_DIR)/*)
 SHD := $(wildcard $(SHD_DIR)/*)
 
-.PHONY: all clean run debug release remake shader
+.PHONY: all clean run debug release remake shaders
 
-all: shader debug
+all: shaders debug
 
 remake: clean all
 
@@ -27,7 +27,7 @@ debug: $(SRC)
 release: $(SRC)
 	$(CXX) $(CXXFLAGS) $(RLFLAGS) -o $(EXE) $(SRC) $(LDFLAGS)
 
-shader: $(SHD)
+shaders: $(SHD)
 	$(SDC) $(SHD_DIR)/shader.vert -o $(SHD_DIR)/bin/vert.spv
 	$(SDC) $(SHD_DIR)/shader.frag -o $(SHD_DIR)/bin/frag.spv
 

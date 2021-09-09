@@ -9,6 +9,7 @@
 #include <vector>
 #include <optional>
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 #include <cstring>
 #include <cstdlib>
@@ -82,6 +83,10 @@ private:
     VkExtent2D swap_chain_extent;
     std::vector<VkImageView> swap_chain_image_views;
 
+    VkRenderPass render_pass;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline graphics_pipeline;
+
     void init_window();
     void init_vulkan();
     void main_loop();
@@ -98,8 +103,10 @@ private:
 
     void create_swap_chain();
     void create_image_views();
+    void create_render_pass();
     void create_graphics_pipeline();
 
+    VkShaderModule create_shader_module(const std::vector<char> &code);
     VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &available_formats);
     VkPresentModeKHR choose_swap_present_mode(const std::vector<VkPresentModeKHR> &available_present_modes);
     VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities);
@@ -109,7 +116,25 @@ private:
     void setup_debug_messenger();
     bool check_validation_layer_support();
     bool check_device_extension_support(VkPhysicalDevice device);
+
     std::vector<const char *> get_required_extensions();
+
+    static std::vector<char> read_file(const std::string &filename)
+    {
+        std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+        if (!file.is_open())
+            throw std::runtime_error("failed to open file!");
+
+        size_t file_size = (size_t)file.tellg();
+        std::vector<char> buffer(file_size);
+
+        file.seekg(0);
+        file.read(buffer.data(), file_size);
+        file.close();
+
+        return buffer;
+    }
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
         VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
