@@ -20,7 +20,7 @@ const bool enable_validation_layers = false;
 const bool enable_validation_layers = true;
 #endif
 
-const uint32_t WIDTH = 800;
+const uint32_t WIDTH = 600;
 const uint32_t HEIGHT = 600;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -99,10 +99,15 @@ private:
     std::vector<VkFence> images_in_flight;
     size_t current_frame = 0;
 
+    bool framebuffer_resized = false;
+
     void init_window();
     void init_vulkan();
     void main_loop();
     void cleanup();
+
+    void clean_swap_chain();
+    void recreate_swap_chain();
 
     void create_instance();
     void create_surface();
@@ -136,6 +141,12 @@ private:
     bool check_device_extension_support(VkPhysicalDevice device);
 
     std::vector<const char *> get_required_extensions();
+
+    static void framebuffer_resize_callback(GLFWwindow *window, int width, int height)
+    {
+        auto app = reinterpret_cast<HelloTriangleApplication *>(glfwGetWindowUserPointer(window));
+        app->framebuffer_resized = true;
+    }
 
     static std::vector<char> read_file(const std::string &filename)
     {

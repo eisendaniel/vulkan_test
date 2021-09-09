@@ -38,9 +38,10 @@ void HelloTriangleApplication::init_window()
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
 }
 
 void HelloTriangleApplication::init_vulkan()
@@ -73,6 +74,8 @@ void HelloTriangleApplication::main_loop()
 
 void HelloTriangleApplication::cleanup()
 {
+    clean_swap_chain();
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         vkDestroySemaphore(device, render_finished_semaphores[i], nullptr);
@@ -82,17 +85,6 @@ void HelloTriangleApplication::cleanup()
 
     vkDestroyCommandPool(device, command_pool, nullptr);
 
-    for (auto framebuffer : swap_chain_framebuffers)
-        vkDestroyFramebuffer(device, framebuffer, nullptr);
-
-    vkDestroyPipeline(device, graphics_pipeline, nullptr);
-    vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
-    vkDestroyRenderPass(device, render_pass, nullptr);
-
-    for (auto image_view : swap_chain_image_views)
-        vkDestroyImageView(device, image_view, nullptr);
-
-    vkDestroySwapchainKHR(device, swap_chain, nullptr);
     vkDestroyDevice(device, nullptr);
 
     if (enable_validation_layers)
@@ -103,6 +95,45 @@ void HelloTriangleApplication::cleanup()
 
     glfwDestroyWindow(window);
     glfwTerminate();
+}
+
+void HelloTriangleApplication::clean_swap_chain()
+{
+    for (auto framebuffer : swap_chain_framebuffers)
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+
+    vkFreeCommandBuffers(device, command_pool, static_cast<uint32_t>(command_buffers.size()), command_buffers.data());
+
+    vkDestroyPipeline(device, graphics_pipeline, nullptr);
+    vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
+    vkDestroyRenderPass(device, render_pass, nullptr);
+
+    for (auto image_view : swap_chain_image_views)
+        vkDestroyImageView(device, image_view, nullptr);
+
+    vkDestroySwapchainKHR(device, swap_chain, nullptr);
+}
+
+void HelloTriangleApplication::recreate_swap_chain()
+{
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwGetFramebufferSize(window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(device);
+
+    clean_swap_chain();
+
+    create_swap_chain();
+    create_image_views();
+    create_render_pass();
+    create_graphics_pipeline();
+    create_framebuffers();
+    create_command_buffers();
 }
 
 void HelloTriangleApplication::create_instance()
@@ -583,13 +614,13 @@ void HelloTriangleApplication::create_command_buffers()
         render_pass_info.renderArea.offset = {0, 0};
         render_pass_info.renderArea.extent = swap_chain_extent;
 
-        VkClearValue clear_color = {{1.0f, 0.0f, 0.5f, 1.0f}};
+        VkClearValue clear_color = {{0.0f, 0.0f, 0.0f, 1.0f}};
         render_pass_info.clearValueCount = 1;
         render_pass_info.pClearValues = &clear_color;
 
         vkCmdBeginRenderPass(command_buffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
-        vkCmdDraw(command_buffers[i], 3, 1, 0, 0);
+        vkCmdDraw(command_buffers[i], 6, 1, 0, 0);
         vkCmdEndRenderPass(command_buffers[i]);
 
         if (vkEndCommandBuffer(command_buffers[i]) != VK_SUCCESS)
@@ -602,7 +633,17 @@ void HelloTriangleApplication::draw_frame()
     vkWaitForFences(device, 1, &in_flight_fences[current_frame], VK_TRUE, UINT64_MAX);
 
     uint32_t image_index;
-    vkAcquireNextImageKHR(device, swap_chain, UINT64_MAX, image_available_semaphores[current_frame], VK_NULL_HANDLE, &image_index);
+    VkResult result = vkAcquireNextImageKHR(device, swap_chain, UINT64_MAX, image_available_semaphores[current_frame], VK_NULL_HANDLE, &image_index);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    { //swapchain became outof date probably due to resize
+        recreate_swap_chain();
+        return;
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        throw std::runtime_error("failed to aquire swap chain image!");
+    }
 
     if (images_in_flight[image_index] != VK_NULL_HANDLE)
         vkWaitForFences(device, 1, &images_in_flight[image_index], VK_TRUE, UINT64_MAX);
@@ -639,7 +680,16 @@ void HelloTriangleApplication::draw_frame()
     present_info.pSwapchains = swap_chains;
     present_info.pImageIndices = &image_index;
 
-    vkQueuePresentKHR(present_queue, &present_info);
+    result = vkQueuePresentKHR(present_queue, &present_info);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized)
+    {
+        framebuffer_resized = false;
+        recreate_swap_chain();
+    }
+    else if (result != VK_SUCCESS)
+        throw std::runtime_error("failed to aquire swap chain image!");
+
     current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
