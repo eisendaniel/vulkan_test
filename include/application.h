@@ -23,6 +23,8 @@ const bool enable_validation_layers = true;
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
+const int MAX_FRAMES_IN_FLIGHT = 2;
+
 const std::vector<const char *> validation_layers = {
     "VK_LAYER_KHRONOS_validation"};
 
@@ -91,6 +93,12 @@ private:
     VkCommandPool command_pool;
     std::vector<VkCommandBuffer> command_buffers;
 
+    std::vector<VkSemaphore> image_available_semaphores;
+    std::vector<VkSemaphore> render_finished_semaphores;
+    std::vector<VkFence> in_flight_fences;
+    std::vector<VkFence> images_in_flight;
+    size_t current_frame = 0;
+
     void init_window();
     void init_vulkan();
     void main_loop();
@@ -114,6 +122,7 @@ private:
     void create_command_buffers();
 
     void draw_frame();
+    void create_sync_objects();
 
     VkShaderModule create_shader_module(const std::vector<char> &code);
     VkSurfaceFormatKHR choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &available_formats);
