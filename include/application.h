@@ -104,7 +104,7 @@ const std::vector<Vertex> vertices = {
     {{0.65f, -0.375f}, {0.0f, 0.0f, 1.0f}},
     {{0.0f, 0.75f}, {1.0f, 1.0f, 1.0f}}};
 
-class HelloTriangleApplication
+class Application
 {
 public:
     void run();
@@ -195,7 +195,7 @@ private:
 
     static void framebuffer_resize_callback(GLFWwindow *window, int width, int height)
     {
-        auto app = reinterpret_cast<HelloTriangleApplication *>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
         app->framebuffer_resized = true;
     }
 
