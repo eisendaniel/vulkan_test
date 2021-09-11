@@ -3,16 +3,21 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
 
-#include <algorithm>
+#define GLM_FORCE_RADIANS
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <set>
-#include <vector>
 #include <array>
-#include <optional>
-#include <iostream>
+#include <vector>
+#include <chrono>
 #include <fstream>
+#include <iostream>
+#include <optional>
+#include <algorithm>
 #include <stdexcept>
+
 #include <cstring>
 #include <cstdlib>
 
@@ -63,6 +68,13 @@ struct SwapChainSupportDetails
     std::vector<VkPresentModeKHR> present_modes;
 };
 
+struct UniformBufferObject
+{
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
 struct Vertex
 {
     glm::vec2 pos;
@@ -97,12 +109,13 @@ struct Vertex
 };
 
 const std::vector<Vertex> vertices = {
-    {{0.0f, -0.75f}, {1.0f, 1.0f, 1.0f}},
-    {{0.65f, 0.375f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.65f, 0.375f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.65f, -0.375f}, {0.0f, 1.0f, 0.0f}},
-    {{0.65f, -0.375f}, {0.0f, 0.0f, 1.0f}},
-    {{0.0f, 0.75f}, {1.0f, 1.0f, 1.0f}}};
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},
+    {{0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}}};
+
+const std::vector<uint16_t> indices = {
+    0, 1, 2, 2, 3, 0};
 
 class Application
 {
@@ -130,13 +143,30 @@ private:
     std::vector<VkFramebuffer> swap_chain_framebuffers;
 
     VkRenderPass render_pass;
+    VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
     VkPipeline graphics_pipeline;
 
     VkCommandPool command_pool;
 
+    /*Driver developers recommend that you also store multiple buffers, like the vertex and index buffer, 
+    into a single VkBuffer and use offsets in commands like vkCmdBindVertexBuffers. 
+    The advantage is that your data is more cache friendly in that case, because it's closer together. 
+    It is even possible to reuse the same chunk of memory for multiple resources 
+    if they are not used during the same render operations, provided that their data is refreshed, of course. 
+    This is known as aliasing and some Vulkan functions have explicit flags to specify that you want to do this.
+    https://vulkan-tutorial.com/en/Vertex_buffers/Index_buffer*/
+
     VkBuffer vertex_buffer;
     VkDeviceMemory vertex_buffer_memory;
+    VkBuffer index_buffer;
+    VkDeviceMemory index_buffer_memory;
+
+    std::vector<VkBuffer> uniform_buffers;
+    std::vector<VkDeviceMemory> uniform_buffers_memory;
+
+    VkDescriptorPool descriptor_pool;
+    std::vector<VkDescriptorSet> descriptor_sets;
 
     std::vector<VkCommandBuffer> command_buffers;
 
@@ -168,15 +198,26 @@ private:
     void create_swap_chain();
     void create_image_views();
     void create_render_pass();
+    void create_descriptor_layout();
     void create_graphics_pipeline();
     void create_framebuffers();
     void create_command_pool();
 
     void create_vertex_buffer();
+    void create_index_buffer();
+    void create_uniform_buffers();
+
+    void create_descriptor_pool();
+    void create_descriptor_sets();
+
+    void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+                       VkBuffer &buffer, VkDeviceMemory &buffer_memory);
+    void copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
     uint32_t find_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
 
     void create_command_buffers();
 
+    void update_uniform_buffer(uint32_t current_image);
     void draw_frame();
     void create_sync_objects();
 
