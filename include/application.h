@@ -8,6 +8,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <stb_image.h>
+
 #include <set>
 #include <array>
 #include <vector>
@@ -27,7 +29,7 @@ const bool enable_validation_layers = false;
 const bool enable_validation_layers = true;
 #endif
 
-const uint32_t WIDTH = 600;
+const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -79,6 +81,7 @@ struct Vertex
 {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 txr_coord;
 
     static VkVertexInputBindingDescription get_binding_description()
     {
@@ -90,9 +93,9 @@ struct Vertex
         return binding_description;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> get_attribute_descriptions()
+    static std::array<VkVertexInputAttributeDescription, 3> get_attribute_descriptions()
     {
-        std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions{};
+        std::array<VkVertexInputAttributeDescription, 3> attribute_descriptions{};
 
         attribute_descriptions[0].binding = 0;
         attribute_descriptions[0].location = 0;
@@ -104,15 +107,20 @@ struct Vertex
         attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attribute_descriptions[1].offset = offsetof(Vertex, color);
 
+        attribute_descriptions[2].binding = 0;
+        attribute_descriptions[2].location = 2;
+        attribute_descriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attribute_descriptions[2].offset = offsetof(Vertex, txr_coord);
+
         return attribute_descriptions;
     }
 };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},
-    {{0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}}};
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f}}};
 
 const std::vector<uint16_t> indices = {
     0, 1, 2, 2, 3, 0};
@@ -148,6 +156,11 @@ private:
     VkPipeline graphics_pipeline;
 
     VkCommandPool command_pool;
+
+    VkImage texture_image;
+    VkDeviceMemory texture_image_memory;
+    VkImageView texture_image_view;
+    VkSampler texture_sampler;
 
     /*Driver developers recommend that you also store multiple buffers, like the vertex and index buffer, 
     into a single VkBuffer and use offsets in commands like vkCmdBindVertexBuffers. 
@@ -203,6 +216,18 @@ private:
     void create_framebuffers();
     void create_command_pool();
 
+    void create_texture_image();
+    void create_texture_image_view();
+    void create_texture_sampler();
+
+    VkImageView create_image_view(VkImage image, VkFormat format);
+    void create_image(uint32_t width, uint32_t height, VkFormat format,
+                      VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+                      VkImage &image, VkDeviceMemory &imageMemory);
+    void transition_image_layout(VkImage image, VkFormat format,
+                                 VkImageLayout old_layout, VkImageLayout new_layout);
+    void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
     void create_vertex_buffer();
     void create_index_buffer();
     void create_uniform_buffers();
@@ -212,6 +237,8 @@ private:
 
     void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                        VkBuffer &buffer, VkDeviceMemory &buffer_memory);
+    VkCommandBuffer begin_single_time_commands();
+    void end_single_time_commands(VkCommandBuffer command_buffer);
     void copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
     uint32_t find_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties);
 
