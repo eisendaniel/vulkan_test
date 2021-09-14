@@ -9,8 +9,9 @@ IDIR := include
 SHD_DIR := shaders
 
 STB_IDIR := $(HOME)/.local/lib/stb
+MSC_IDIR := $(HOME)/.local/lib/misc
 
-CXXFLAGS = -std=c++17 -Wall -I$(IDIR) -I$(STB_IDIR)
+CXXFLAGS = -std=c++17 -Wall -I$(IDIR) -I$(STB_IDIR) -I$(MSC_IDIR)
 LDFLAGS = -lglfw -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl
 
 EXE := $(BIN_DIR)/vulkan_test

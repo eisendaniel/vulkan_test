@@ -42,6 +42,7 @@ void Application::init_window()
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
+    glfwSetKeyCallback(window, key_callback);
 }
 
 void Application::init_vulkan()
@@ -56,11 +57,13 @@ void Application::init_vulkan()
     create_render_pass();
     create_descriptor_layout();
     create_graphics_pipeline();
-    create_framebuffers();
     create_command_pool();
+    create_depth_resources();
+    create_framebuffers();
     create_texture_image();
     create_texture_image_view();
     create_texture_sampler();
+    load_model();
     create_vertex_buffer();
     create_index_buffer();
     create_uniform_buffers();
@@ -68,6 +71,48 @@ void Application::init_vulkan()
     create_descriptor_sets();
     create_command_buffers();
     create_sync_objects();
+}
+
+void Application::load_model()
+{
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str()))
+    {
+        throw std::runtime_error(warn + err);
+    }
+
+    std::unordered_map<Vertex, uint32_t> unique_vertices{};
+
+    for (const auto &shape : shapes)
+    {
+        for (const auto &index : shape.mesh.indices)
+        {
+            Vertex vertex{};
+
+            vertex.pos = {
+                attrib.vertices[3 * index.vertex_index + 0],
+                attrib.vertices[3 * index.vertex_index + 1],
+                attrib.vertices[3 * index.vertex_index + 2]};
+
+            vertex.txr_coord = {
+                attrib.texcoords[2 * index.texcoord_index + 0],
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]};
+
+            vertex.color = {1.0f, 1.0f, 1.0f};
+
+            if (unique_vertices.count(vertex) == 0)
+            {
+                unique_vertices[vertex] = static_cast<uint32_t>(vertices.size());
+                vertices.push_back(vertex);
+            }
+
+            indices.push_back(unique_vertices[vertex]);
+        }
+    }
 }
 
 void Application::main_loop()
@@ -119,6 +164,10 @@ void Application::cleanup()
 
 void Application::clean_swap_chain()
 {
+    vkDestroyImageView(device, depth_image_view, nullptr);
+    vkDestroyImage(device, depth_image, nullptr);
+    vkFreeMemory(device, depth_image_memory, nullptr);
+
     for (auto framebuffer : swap_chain_framebuffers)
         vkDestroyFramebuffer(device, framebuffer, nullptr);
 
@@ -160,6 +209,7 @@ void Application::recreate_swap_chain()
     create_image_views();
     create_render_pass();
     create_graphics_pipeline();
+    create_depth_resources();
     create_framebuffers();
     create_uniform_buffers();
     create_descriptor_pool();
@@ -403,7 +453,7 @@ void Application::create_image_views()
 
     for (size_t i = 0; i < swap_chain_images.size(); i++)
     {
-        swap_chain_image_views[i] = create_image_view(swap_chain_images[i], swap_chain_image_format);
+        swap_chain_image_views[i] = create_image_view(swap_chain_images[i], swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 }
 
@@ -419,27 +469,46 @@ void Application::create_render_pass()
     color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+    VkAttachmentDescription depth_attachment{};
+    depth_attachment.format = find_depth_format();
+    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference color_attachment_ref{};
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depth_attachment_ref{};
+    depth_attachment_ref.attachment = 1;
+    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
+    subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
+    std::array<VkAttachmentDescription, 2> attachments = {color_attachment, depth_attachment};
     VkRenderPassCreateInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    render_pass_info.attachmentCount = 1;
-    render_pass_info.pAttachments = &color_attachment;
+    render_pass_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+    render_pass_info.pAttachments = attachments.data();
     render_pass_info.subpassCount = 1;
     render_pass_info.pSubpasses = &subpass;
     render_pass_info.dependencyCount = 1;
@@ -552,6 +621,15 @@ void Application::create_graphics_pipeline()
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+    //depth pass
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+    depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil.depthTestEnable = VK_TRUE;
+    depth_stencil.depthWriteEnable = VK_TRUE;
+    depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depth_stencil.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil.stencilTestEnable = VK_FALSE;
+
     //Color blending
     VkPipelineColorBlendAttachmentState color_blend_attachment{};
     color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -587,6 +665,7 @@ void Application::create_graphics_pipeline()
     pipeline_info.pViewportState = &viewport_state;
     pipeline_info.pRasterizationState = &rasterizer;
     pipeline_info.pMultisampleState = &multisampling;
+    pipeline_info.pDepthStencilState = &depth_stencil;
     pipeline_info.pColorBlendState = &color_blending;
     pipeline_info.layout = pipeline_layout;
     pipeline_info.renderPass = render_pass;
@@ -607,13 +686,15 @@ void Application::create_framebuffers()
 
     for (size_t i = 0; i < swap_chain_image_views.size(); i++)
     {
-        VkImageView attachments[] = {swap_chain_image_views[i]};
+        std::array<VkImageView, 2> attachments = {
+            swap_chain_image_views[i],
+            depth_image_view};
 
         VkFramebufferCreateInfo framebuffer_info{};
         framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebuffer_info.renderPass = render_pass;
-        framebuffer_info.attachmentCount = 1;
-        framebuffer_info.pAttachments = attachments;
+        framebuffer_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+        framebuffer_info.pAttachments = attachments.data();
         framebuffer_info.width = swap_chain_extent.width;
         framebuffer_info.height = swap_chain_extent.height;
         framebuffer_info.layers = 1;
@@ -636,10 +717,49 @@ void Application::create_command_pool()
         throw std::runtime_error("failed to create command pool!");
 }
 
+void Application::create_depth_resources()
+{
+    VkFormat depth_format = find_depth_format();
+    create_image(swap_chain_extent.width, swap_chain_extent.height, depth_format,
+                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depth_image, depth_image_memory);
+    depth_image_view = create_image_view(depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
+}
+
+VkFormat Application::find_depth_format()
+{
+    return find_supported_format(
+        {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+}
+
+VkFormat Application::find_supported_format(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
+{
+    for (VkFormat format : candidates)
+    {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(physical_device, format, &props);
+
+        if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
+            return format;
+        else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features)
+            return format;
+    }
+
+    throw std::runtime_error("failed to find supported format!");
+}
+
+bool has_stencil_component(VkFormat format)
+{
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+           format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
 void Application::create_texture_image()
 {
     int txr_width, txr_height, txr_channels;
-    stbi_uc *pixels = stbi_load("textures/texture.jpg", &txr_width, &txr_height, &txr_channels, STBI_rgb_alpha);
+    stbi_uc *pixels = stbi_load(TEXTURE_PATH.c_str(), &txr_width, &txr_height, &txr_channels, STBI_rgb_alpha);
     VkDeviceSize image_size = txr_width * txr_height * 4;
 
     if (!pixels)
@@ -674,7 +794,7 @@ void Application::create_texture_image()
 
 void Application::create_texture_image_view()
 {
-    texture_image_view = create_image_view(texture_image, VK_FORMAT_R8G8B8A8_SRGB);
+    texture_image_view = create_image_view(texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 void Application::create_texture_sampler()
@@ -704,14 +824,14 @@ void Application::create_texture_sampler()
         throw std::runtime_error("failed to create texture sampler!");
 }
 
-VkImageView Application::create_image_view(VkImage image, VkFormat format)
+VkImageView Application::create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags)
 {
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view_info.image = image;
     view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
     view_info.format = format;
-    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_info.subresourceRange.aspectMask = aspect_flags;
     view_info.subresourceRange.baseMipLevel = 0;
     view_info.subresourceRange.levelCount = 1;
     view_info.subresourceRange.baseArrayLayer = 0;
@@ -1078,9 +1198,15 @@ void Application::create_command_buffers()
         render_pass_info.renderArea.offset = {0, 0};
         render_pass_info.renderArea.extent = swap_chain_extent;
 
-        VkClearValue clear_color = {{0.02f, 0.02f, 0.02f, 1.0f}};
-        render_pass_info.clearValueCount = 1;
-        render_pass_info.pClearValues = &clear_color;
+        std::array<VkClearValue, 2> clear_values{};
+        clear_values[0].color = {{0.02f, 0.02f, 0.02f, 1.0f}};
+        clear_values[1].depthStencil = {1.0f, 0};
+
+        render_pass_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+        render_pass_info.pClearValues = clear_values.data();
+
+        render_pass_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+        render_pass_info.pClearValues = clear_values.data();
 
         vkCmdBeginRenderPass(command_buffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
@@ -1088,7 +1214,7 @@ void Application::create_command_buffers()
         VkBuffer vertex_buffers[] = {vertex_buffer};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_buffers, offsets);
-        vkCmdBindIndexBuffer(command_buffers[i], index_buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(command_buffers[i], index_buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_sets[i], 0, nullptr);
 
         vkCmdDrawIndexed(command_buffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
@@ -1108,8 +1234,8 @@ void Application::update_uniform_buffer(uint32_t current_image)
     float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
 
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(16.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(1.0f, 1.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(camera_pos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.proj = glm::perspective(glm::radians(45.0f), swap_chain_extent.width / (float)swap_chain_extent.height, 0.1f, 10.0f);
     ubo.proj[1][1] *= -1;
 

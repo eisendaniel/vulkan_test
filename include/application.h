@@ -5,14 +5,20 @@
 #include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
+
 #include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <stb_image.h>
+#include <tiny_obj_loader.h>
 
 #include <set>
 #include <array>
 #include <vector>
+#include <unordered_map>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -31,6 +37,9 @@ const bool enable_validation_layers = true;
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+
+const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -79,7 +88,7 @@ struct UniformBufferObject
 
 struct Vertex
 {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 txr_coord;
 
@@ -99,7 +108,7 @@ struct Vertex
 
         attribute_descriptions[0].binding = 0;
         attribute_descriptions[0].location = 0;
-        attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attribute_descriptions[0].offset = offsetof(Vertex, pos);
 
         attribute_descriptions[1].binding = 0;
@@ -114,16 +123,26 @@ struct Vertex
 
         return attribute_descriptions;
     }
+    bool operator==(const Vertex &other) const
+    {
+        return pos == other.pos && color == other.color && txr_coord == other.txr_coord;
+    }
 };
 
-const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f}}};
-
-const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0};
+namespace std
+{
+    template <>
+    struct hash<Vertex>
+    {
+        size_t operator()(Vertex const &vertex) const
+        {
+            return ((hash<glm::vec3>()(vertex.pos) ^
+                     (hash<glm::vec3>()(vertex.color) << 1)) >>
+                    1) ^
+                   (hash<glm::vec2>()(vertex.txr_coord) << 1);
+        }
+    };
+}
 
 class Application
 {
@@ -157,6 +176,10 @@ private:
 
     VkCommandPool command_pool;
 
+    VkImage depth_image;
+    VkDeviceMemory depth_image_memory;
+    VkImageView depth_image_view;
+
     VkImage texture_image;
     VkDeviceMemory texture_image_memory;
     VkImageView texture_image_view;
@@ -170,6 +193,8 @@ private:
     This is known as aliasing and some Vulkan functions have explicit flags to specify that you want to do this.
     https://vulkan-tutorial.com/en/Vertex_buffers/Index_buffer*/
 
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     VkBuffer vertex_buffer;
     VkDeviceMemory vertex_buffer_memory;
     VkBuffer index_buffer;
@@ -190,6 +215,10 @@ private:
     size_t current_frame = 0;
 
     bool framebuffer_resized = false;
+
+    glm::vec3 camera_pos = {2.0f, 2.0f, 1.0f};
+
+    void load_model();
 
     void init_window();
     void init_vulkan();
@@ -216,11 +245,17 @@ private:
     void create_framebuffers();
     void create_command_pool();
 
+    void create_depth_resources();
+    VkFormat find_depth_format();
+    VkFormat find_supported_format(const std::vector<VkFormat> &candidates,
+                                   VkImageTiling tiling, VkFormatFeatureFlags features);
+    bool has_stencil_component(VkFormat format);
+
     void create_texture_image();
     void create_texture_image_view();
     void create_texture_sampler();
 
-    VkImageView create_image_view(VkImage image, VkFormat format);
+    VkImageView create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags);
     void create_image(uint32_t width, uint32_t height, VkFormat format,
                       VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                       VkImage &image, VkDeviceMemory &imageMemory);
@@ -293,6 +328,24 @@ private:
         std::cerr << "validation layer: " << p_callback_data->pMessage << std::endl;
 
         return VK_FALSE;
+    }
+
+    static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+    {
+        auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
+
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        else if (key == GLFW_KEY_LEFT && (action == GLFW_PRESS || action == GLFW_REPEAT))
+            app->camera_pos += glm::vec3(0.1f, 0.0f, 0.0f);
+        else if (key == GLFW_KEY_RIGHT && (action == GLFW_PRESS || action == GLFW_REPEAT))
+            app->camera_pos -= glm::vec3(0.1f, 0.0f, 0.0f);
+        else if (key == GLFW_KEY_DOWN && (action == GLFW_PRESS || action == GLFW_REPEAT))
+            app->camera_pos += glm::vec3(0.0f, 0.1f, 0.0f);
+        else if (key == GLFW_KEY_UP && (action == GLFW_PRESS || action == GLFW_REPEAT))
+            app->camera_pos -= glm::vec3(0.0f, 0.1f, 0.0f);
+        else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
+            app->camera_pos = glm::vec3(0.0f, 4.0f, 1.0f);
     }
 };
 

@@ -8,5 +8,5 @@ layout(location=1)in vec2 frag_txr_coord;
 layout(location=0)out vec4 out_color;
 
 void main(){
-    out_color=vec4(frag_color*texture(txr_sampler,frag_txr_coord).rbg,1.);
+    out_color=texture(txr_sampler,frag_txr_coord);
 }
