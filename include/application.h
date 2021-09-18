@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/hash.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #include <stb_image.h>
 #include <tiny_obj_loader.h>
@@ -152,6 +153,9 @@ public:
 private:
     GLFWwindow *window;
 
+    float delta = 0.0f;
+    float last_frame = 0.0f;
+
     VkInstance instance;
     VkDebugUtilsMessengerEXT debug_messenger;
     VkSurfaceKHR surface;
@@ -216,9 +220,19 @@ private:
 
     bool framebuffer_resized = false;
 
-    glm::vec3 camera_pos = {2.0f, 2.0f, 1.0f};
+    //camera values
+    glm::vec3 camera_pos = {0.0f, 4.0f, 0.0f};
+    glm::vec3 camera_forward = {0.0f, -1.0f, 0.0};
+    glm::vec3 camera_up = {0.0f, 0.0f, 1.0f};
+    float camera_pitch = 0.0f;
+    float camera_yaw = -90.0f;
+
+    bool m_init = true;
+    float m_lastx = (float)WIDTH / 2.0f;
+    float m_lasty = (float)HEIGHT / 2.0f;
 
     void load_model();
+    void process_input();
 
     void init_window();
     void init_vulkan();
@@ -296,10 +310,15 @@ private:
 
     std::vector<const char *> get_required_extensions();
 
-    static void framebuffer_resize_callback(GLFWwindow *window, int width, int height)
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+        VkDebugUtilsMessageTypeFlagsEXT message_type,
+        const VkDebugUtilsMessengerCallbackDataEXT *p_callback_data,
+        void *p_user_data)
     {
-        auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
-        app->framebuffer_resized = true;
+        std::cerr << "validation layer: " << p_callback_data->pMessage << std::endl;
+
+        return VK_FALSE;
     }
 
     static std::vector<char> read_file(const std::string &filename)
@@ -319,33 +338,42 @@ private:
         return buffer;
     }
 
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
-        VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-        VkDebugUtilsMessageTypeFlagsEXT message_type,
-        const VkDebugUtilsMessengerCallbackDataEXT *p_callback_data,
-        void *p_user_data)
+    static void framebuffer_resize_callback(GLFWwindow *window, int width, int height)
     {
-        std::cerr << "validation layer: " << p_callback_data->pMessage << std::endl;
-
-        return VK_FALSE;
+        auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
+        app->framebuffer_resized = true;
     }
 
-    static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+    static void mouse_callback(GLFWwindow *window, double xpos, double ypos)
     {
         auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
 
-        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
-        else if (key == GLFW_KEY_LEFT && (action == GLFW_PRESS || action == GLFW_REPEAT))
-            app->camera_pos += glm::vec3(0.1f, 0.0f, 0.0f);
-        else if (key == GLFW_KEY_RIGHT && (action == GLFW_PRESS || action == GLFW_REPEAT))
-            app->camera_pos -= glm::vec3(0.1f, 0.0f, 0.0f);
-        else if (key == GLFW_KEY_DOWN && (action == GLFW_PRESS || action == GLFW_REPEAT))
-            app->camera_pos += glm::vec3(0.0f, 0.1f, 0.0f);
-        else if (key == GLFW_KEY_UP && (action == GLFW_PRESS || action == GLFW_REPEAT))
-            app->camera_pos -= glm::vec3(0.0f, 0.1f, 0.0f);
-        else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
-            app->camera_pos = glm::vec3(0.0f, 4.0f, 1.0f);
+        if (app->m_init)
+        {
+            app->m_lastx = xpos;
+            app->m_lasty = ypos;
+            app->m_init = false;
+        }
+
+        float x_offset = xpos - app->m_lastx;
+        float y_offset = ypos - app->m_lasty;
+        app->m_lastx = xpos;
+        app->m_lasty = ypos;
+
+        float sensitivity = 0.1f;
+        x_offset *= sensitivity;
+        y_offset *= sensitivity;
+
+        app->camera_yaw -= x_offset;
+        app->camera_pitch -= y_offset;
+
+        app->camera_pitch = std::clamp(app->camera_pitch, -89.0f, 89.0f);
+
+        glm::vec3 direction;
+        direction.x = cos(glm::radians(app->camera_yaw)) * cos(glm::radians(app->camera_pitch));
+        direction.y = sin(glm::radians(app->camera_yaw)) * cos(glm::radians(app->camera_pitch));
+        direction.z = sin(glm::radians(app->camera_pitch));
+        app->camera_forward = glm::normalize(direction);
     }
 };
 

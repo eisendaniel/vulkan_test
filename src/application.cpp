@@ -41,8 +41,11 @@ void Application::init_window()
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
+
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
     glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
-    glfwSetKeyCallback(window, key_callback);
+    glfwSetCursorPosCallback(window, mouse_callback);
 }
 
 void Application::init_vulkan()
@@ -115,12 +118,37 @@ void Application::load_model()
     }
 }
 
+void Application::process_input()
+{
+    float camera_speed = 2.0f * delta;
+
+    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
+        camera_pos = {0.0f, 4.0f, 0.0f};
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera_pos += camera_speed * camera_forward;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera_pos -= camera_speed * camera_forward;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera_pos -= glm::normalize(glm::cross(camera_forward, camera_up)) * camera_speed;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera_pos += glm::normalize(glm::cross(camera_forward, camera_up)) * camera_speed;
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        camera_pos += camera_speed * camera_up;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+        camera_pos -= camera_speed * camera_up;
+}
+
 void Application::main_loop()
 {
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
+        process_input();
         draw_frame();
+
+        float current_frame = glfwGetTime();
+        delta = current_frame - last_frame;
+        last_frame = current_frame;
     }
 
     vkDeviceWaitIdle(device);
@@ -763,6 +791,11 @@ void Application::create_texture_image()
     VkDeviceSize image_size = txr_width * txr_height * 4;
 
     if (!pixels)
+    {
+        pixels = stbi_load("textures/null.png", &txr_width, &txr_height, &txr_channels, STBI_rgb_alpha);
+        image_size = txr_width * txr_height * 4;
+    }
+    else if (!pixels)
         throw std::runtime_error("failed to load texture image");
 
     VkBuffer staging_buffer;
@@ -1228,16 +1261,11 @@ void Application::create_command_buffers()
 
 void Application::update_uniform_buffer(uint32_t current_image)
 {
-    static auto start_time = std::chrono::high_resolution_clock::now();
-
-    auto current_time = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
-
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(camera_pos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(camera_pos, camera_pos + camera_forward, camera_up);
     ubo.proj = glm::perspective(glm::radians(45.0f), swap_chain_extent.width / (float)swap_chain_extent.height, 0.1f, 10.0f);
-    ubo.proj[1][1] *= -1;
+    ubo.proj[1][1] *= -1; //corrective flip
 
     void *data;
     vkMapMemory(device, uniform_buffers_memory[current_image], 0, sizeof(ubo), 0, &data);
@@ -1301,6 +1329,7 @@ void Application::draw_frame()
 
     result = vkQueuePresentKHR(present_queue, &present_info);
 
+    //revalidate swapchain if resized
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized)
     {
         framebuffer_resized = false;

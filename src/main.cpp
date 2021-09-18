@@ -1,5 +1,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYOBJLOADER_IMPLEMENTATION
+
 #include "application.h"
 
 int main()
