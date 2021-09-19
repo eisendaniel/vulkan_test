@@ -23,6 +23,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <optional>
 #include <algorithm>
 #include <stdexcept>
@@ -39,13 +40,13 @@ const bool enable_validation_layers = true;
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
-const std::string MODEL_PATH = "models/viking_room.obj";
-const std::string TEXTURE_PATH = "textures/viking_room.png";
+const std::string MODEL_PATH = "models/sponza.obj";
+const std::string TEXTURE_PATH = "textures/null.png";
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<const char *> validation_layers = {
-    "VK_LAYER_KHRONOS_validation"};
+    "VK_LAYER_KHRONOS_validaton"};
 
 const std::vector<const char *> device_extensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -153,9 +154,6 @@ public:
 private:
     GLFWwindow *window;
 
-    float delta = 0.0f;
-    float last_frame = 0.0f;
-
     VkInstance instance;
     VkDebugUtilsMessengerEXT debug_messenger;
     VkSurfaceKHR surface;
@@ -220,6 +218,11 @@ private:
 
     bool framebuffer_resized = false;
 
+    //frame timing (s)
+    float delta = 0.0f;
+    float t_last_frame = 0.0f;
+    float t_last_monitor = 0.0f;
+
     //camera values
     glm::vec3 camera_pos = {0.0f, 4.0f, 0.0f};
     glm::vec3 camera_forward = {0.0f, -1.0f, 0.0};
@@ -227,12 +230,14 @@ private:
     float camera_pitch = 0.0f;
     float camera_yaw = -90.0f;
 
+    bool m_captured = true;
     bool m_init = true;
     float m_lastx = (float)WIDTH / 2.0f;
     float m_lasty = (float)HEIGHT / 2.0f;
 
     void load_model();
     void process_input();
+    void process_timing(bool show_fps);
 
     void init_window();
     void init_vulkan();
@@ -344,9 +349,27 @@ private:
         app->framebuffer_resized = true;
     }
 
+    static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+    {
+        auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
+
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        {
+            if (app->m_captured)
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            else
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+            app->m_captured = !app->m_captured;
+        }
+    }
+
     static void mouse_callback(GLFWwindow *window, double xpos, double ypos)
     {
         auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
+
+        if (!app->m_captured)
+            return;
 
         if (app->m_init)
         {

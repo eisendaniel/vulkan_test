@@ -46,6 +46,7 @@ void Application::init_window()
 
     glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetKeyCallback(window, key_callback);
 }
 
 void Application::init_vulkan()
@@ -138,6 +139,24 @@ void Application::process_input()
         camera_pos -= camera_speed * camera_up;
 }
 
+void Application::process_timing(bool show_fps)
+{
+    float t_current_frame = glfwGetTime();
+    delta = t_current_frame - t_last_frame;
+    t_last_frame = t_current_frame;
+
+    if (!show_fps)
+        return;
+
+    if (t_current_frame - t_last_monitor >= 1.0f)
+    {
+        std::stringstream ss;
+        ss << 1000.0f * delta << " ms  |  " << 1.0f / delta << " fps";
+        glfwSetWindowTitle(window, ss.str().c_str());
+        t_last_monitor = t_current_frame;
+    }
+}
+
 void Application::main_loop()
 {
     while (!glfwWindowShouldClose(window))
@@ -145,10 +164,7 @@ void Application::main_loop()
         glfwPollEvents();
         process_input();
         draw_frame();
-
-        float current_frame = glfwGetTime();
-        delta = current_frame - last_frame;
-        last_frame = current_frame;
+        process_timing(true);
     }
 
     vkDeviceWaitIdle(device);
@@ -1262,9 +1278,9 @@ void Application::create_command_buffers()
 void Application::update_uniform_buffer(uint32_t current_image)
 {
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     ubo.view = glm::lookAt(camera_pos, camera_pos + camera_forward, camera_up);
-    ubo.proj = glm::perspective(glm::radians(45.0f), swap_chain_extent.width / (float)swap_chain_extent.height, 0.1f, 10.0f);
+    ubo.proj = glm::perspective(glm::radians(60.0f), swap_chain_extent.width / (float)swap_chain_extent.height, 0.1f, 100.0f);
     ubo.proj[1][1] *= -1; //corrective flip
 
     void *data;
@@ -1393,14 +1409,16 @@ VkSurfaceFormatKHR Application::choose_swap_surface_format(const std::vector<VkS
     return available_formats[0];
 }
 
+//https://vulkan-tutorial.com/en/Drawing_a_triangle/Presentation/Swap_chain
 VkPresentModeKHR Application::choose_swap_present_mode(const std::vector<VkPresentModeKHR> &available_present_modes)
 {
     for (const auto &available_present_mode : available_present_modes)
     {
         if (available_present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
+        {
             return available_present_mode;
+        }
     }
-
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
