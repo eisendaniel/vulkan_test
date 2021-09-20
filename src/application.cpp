@@ -106,7 +106,10 @@ void Application::load_model()
                 attrib.texcoords[2 * index.texcoord_index + 0],
                 1.0f - attrib.texcoords[2 * index.texcoord_index + 1]};
 
-            vertex.color = {1.0f, 1.0f, 1.0f};
+            vertex.color = {
+                0.5 * attrib.normals[3 * index.vertex_index + 0] + 0.5,
+                0.5 * attrib.normals[3 * index.vertex_index + 1] + 0.5,
+                0.5 * attrib.normals[3 * index.vertex_index + 2] + 0.5};
 
             if (unique_vertices.count(vertex) == 0)
             {
@@ -121,7 +124,10 @@ void Application::load_model()
 
 void Application::process_input()
 {
-    float camera_speed = 2.0f * delta;
+
+    camera_speed = 2.0f * delta;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        camera_speed = 4.0f * delta;
 
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
         camera_pos = {0.0f, 4.0f, 0.0f};
@@ -163,6 +169,7 @@ void Application::main_loop()
     {
         glfwPollEvents();
         process_input();
+
         draw_frame();
         process_timing(true);
     }

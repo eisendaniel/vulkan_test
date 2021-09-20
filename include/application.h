@@ -229,6 +229,7 @@ private:
     glm::vec3 camera_up = {0.0f, 0.0f, 1.0f};
     float camera_pitch = 0.0f;
     float camera_yaw = -90.0f;
+    float camera_speed = 0.0f;
 
     bool m_captured = true;
     bool m_init = true;
